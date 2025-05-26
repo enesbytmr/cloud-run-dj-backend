@@ -1,5 +1,3 @@
-
-
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 import os
@@ -7,6 +5,7 @@ import csv
 import yt_dlp
 import zipfile
 import uuid
+import shutil
 
 app = FastAPI()
 
@@ -30,29 +29,39 @@ async def download_csv(file: UploadFile = File(...)):
             if artist and title:
                 tracks.append((artist.strip(), title.strip()))
 
-    for artist, title in tracks:
-        search_query = f"ytsearch1:{artist} - {title}"
-        output_template = os.path.join(session_dir, f"{artist} - {title}.%(ext)s")
-        ydl_opts = {
-            "format": "bestaudio/best",
-            "outtmpl": output_template,
-            "quiet": True,
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "320",
-            }],
-        }
-        try:
+    try:
+        for artist, title in tracks:
+            filename_base = f"{artist} - {title}"
+            output_path_mp3 = os.path.join(session_dir, f"{filename_base}.mp3")
+            if os.path.exists(output_path_mp3):
+                print(f"Already exists: {filename_base}")
+                continue
+
+            search_query = f"ytsearch1:{filename_base}"
+            output_template = os.path.join(session_dir, f"{filename_base}.%(ext)s")
+
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": output_template,
+                "quiet": True,
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "320",
+                }],
+            }
+
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([search_query])
-        except Exception as e:
-            print(f"Download error for {artist} - {title}: {e}")
 
-    zip_path = f"/tmp/{session_id}.zip"
-    with zipfile.ZipFile(zip_path, "w") as zipf:
-        for file_name in os.listdir(session_dir):
-            if file_name.endswith(".mp3"):
-                zipf.write(os.path.join(session_dir, file_name), arcname=file_name)
+        zip_path = f"/tmp/{session_id}.zip"
+        with zipfile.ZipFile(zip_path, "w") as zipf:
+            for file_name in os.listdir(session_dir):
+                if file_name.endswith(".mp3"):
+                    zipf.write(os.path.join(session_dir, file_name), arcname=file_name)
 
-    return FileResponse(zip_path, filename="downloaded_tracks.zip")
+        return FileResponse(zip_path, filename="downloaded_tracks.zip")
+
+    finally:
+        if os.path.exists(session_dir):
+            shutil.rmtree(session_dir)
