@@ -3,6 +3,8 @@
 import os
 import argparse
 import subprocess
+import tempfile
+import shutil
 
 
 def sanitize(s: str) -> str:
@@ -57,8 +59,6 @@ def main() -> None:
         "m4a",
         "--threads",
         "5",
-        "--cookie-file",
-        "/Users/fevzienesbaytemir/Documents/djenes/cookies.txt",
     ]
 
     if args.cookies:
@@ -66,6 +66,11 @@ def main() -> None:
 
     print("Running:", " ".join(cmd))
     subprocess.run(cmd, check=True)
+
+    temp_dir = tempfile.mkdtemp(prefix="spotdl_")
+    archive_base = os.path.join(temp_dir, playlist_name)
+    zip_path = shutil.make_archive(archive_base, "zip", base_dir)
+    print("Created archive:", zip_path)
 
 
 if __name__ == "__main__":
