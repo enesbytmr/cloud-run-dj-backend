@@ -2,12 +2,22 @@ from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import FileResponse
 import os
 import csv
+import tempfile
 import yt_dlp
+from ytmusicapi import setup
 import zipfile
 import uuid
 import shutil
 
 app = FastAPI()
+
+
+@app.get("/login")
+async def login():
+    """Trigger OAuth login and save cookies to /tmp."""
+    auth_path = os.path.join(tempfile.gettempdir(), "yt_auth.json")
+    setup(filepath=auth_path)
+    return {"cookies_saved": auth_path}
 
 @app.post("/download")
 async def download_csv(file: UploadFile = File(...)):
