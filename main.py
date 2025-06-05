@@ -1,67 +1,72 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import FileResponse
+#!/usr/bin/env python3
+
 import os
-import csv
-import yt_dlp
-import zipfile
-import uuid
-import shutil
+import argparse
+import subprocess
 
-app = FastAPI()
 
-@app.post("/download")
-async def download_csv(file: UploadFile = File(...)):
-    session_id = str(uuid.uuid4())
-    session_dir = f"/tmp/{session_id}"
-    os.makedirs(session_dir, exist_ok=True)
+def sanitize(s: str) -> str:
+    """Remove characters invalid for filenames."""
+    return "".join(c for c in s if c.isalnum() or c in " _-").rstrip()
 
-    contents = await file.read()
-    csv_path = f"{session_dir}/list.csv"
-    with open(csv_path, "wb") as f:
-        f.write(contents)
 
-    tracks = []
-    with open(csv_path, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            artist = row.get("artist") or row.get("Artist")
-            title = row.get("title") or row.get("Title")
-            if artist and title:
-                tracks.append((artist.strip(), title.strip()))
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Download a Spotify playlist via the spotdl CLI."
+    )
+    parser.add_argument(
+        "playlist",
+        help="Spotify playlist URL",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="downloads",
+        help="Base directory to save downloads",
+    )
+    parser.add_argument(
+        "--folder-name",
+        help="Name of the playlist folder (defaults to playlist ID)",
+    )
+    parser.add_argument(
+        "--cookies",
+        help="Path to cookies.txt file for YouTube Music authentication (optional)",
+    )
 
-    try:
-        for artist, title in tracks:
-            filename_base = f"{artist} - {title}"
-            output_path_mp3 = os.path.join(session_dir, f"{filename_base}.mp3")
-            if os.path.exists(output_path_mp3):
-                print(f"Already exists: {filename_base}")
-                continue
+    args = parser.parse_args()
 
-            search_query = f"ytsearch1:{filename_base}"
-            output_template = os.path.join(session_dir, f"{filename_base}.%(ext)s")
+    # Determine playlist folder name
+    if args.folder_name:
+        playlist_name = sanitize(args.folder_name)
+    else:
+        raw_name = args.playlist.rstrip("/").split("/")[-1].split("?")[0]
+        playlist_name = sanitize(raw_name)
 
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": output_template,
-                "quiet": True,
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": "320",
-                }],
-            }
+    base_dir = os.path.join(args.output_dir, playlist_name)
+    os.makedirs(base_dir, exist_ok=True)
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([search_query])
+    output_template = os.path.join(base_dir)
 
-        zip_path = f"/tmp/{session_id}.zip"
-        with zipfile.ZipFile(zip_path, "w") as zipf:
-            for file_name in os.listdir(session_dir):
-                if file_name.endswith(".mp3"):
-                    zipf.write(os.path.join(session_dir, file_name), arcname=file_name)
+    cmd = [
+        "spotdl",
+        args.playlist,
+        "--output",
+        output_template,
+        "--audio",
+        "youtube-music",
+        "--format",
+        "m4a",
+        "--threads",
+        "5",
+        "--cookie-file",
+        "/Users/fevzienesbaytemir/Documents/djenes/cookies.txt",
+    ]
 
-        return FileResponse(zip_path, filename="downloaded_tracks.zip")
+    if args.cookies:
+        cmd.extend(["--cookie-file", args.cookies])
 
-    finally:
-        if os.path.exists(session_dir):
-            shutil.rmtree(session_dir)
+    print("Running:", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+
+if __name__ == "__main__":
+    main()
